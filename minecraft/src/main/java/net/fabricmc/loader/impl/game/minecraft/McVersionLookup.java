@@ -152,16 +152,44 @@ public final class McVersionLookup {
 				return;
 			}
 
+			if ((is = cp.getInputStream("net/minecraft/server/MinecraftServer.class")) != null && fromAnalyzer(is, new MethodConstantRetVisitor("getMinecraftVersion"), builder)) {
+				return;
+			}
+
 			CpEntry entry = cp.getEntry("net/minecraft/client/Minecraft.class");
 
 			if (entry != null) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+					return;
+				}
+
 				// version-like constant return value of a Minecraft method (obfuscated/unknown name)
 				if (fromAnalyzer(entry.getInputStream(), new MethodConstantRetVisitor(null), builder)) {
 					return;
 				}
 
+				if (fromAnalyzer(entry.getInputStream(), new MethodConstantRetVisitor("getMinecraftVersion"), builder)) {
+					return;
+				}
+
 				// version-like constant passed into Display.setTitle in a Minecraft method (obfuscated/unknown name)
 				if (fromAnalyzer(entry.getInputStream(), new MethodStringConstantContainsVisitor("org/lwjgl/opengl/Display", "setTitle"), builder)) {
+					return;
+				}
+			}
+
+			entry = cp.getEntry("net/minecraft/core/Version.class");
+
+			if (entry != null) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+					return;
+				}
+			}
+
+			entry = cp.getEntry("net/minecraft/core/Global.class");
+
+			if (entry != null) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
 					return;
 				}
 			}

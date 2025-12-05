@@ -39,6 +39,7 @@ import net.fabricmc.loader.api.VersionParsingException;
 import net.fabricmc.loader.api.metadata.version.VersionPredicate;
 import net.fabricmc.loader.impl.game.minecraft.Hooks;
 import net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider;
+import net.fabricmc.loader.impl.game.minecraft.applet.AppletLauncher;
 import net.fabricmc.loader.impl.game.patch.GamePatch;
 import net.fabricmc.loader.impl.launch.FabricLauncher;
 import net.fabricmc.loader.impl.util.log.Log;
@@ -73,6 +74,7 @@ public class EntrypointPatch extends GamePatch {
 		String gameEntrypoint = null;
 		boolean serverHasFile = true;
 		boolean isApplet = entrypoint.contains("Applet");
+		boolean isDirect = entrypoint.equals("net.minecraft.client.Minecraft");
 		ClassNode mainClass = classSource.apply(entrypoint);
 
 		if (mainClass == null) {
@@ -176,6 +178,9 @@ public class EntrypointPatch extends GamePatch {
 					gameEntrypoint = newGameInsn.owner.replace('/', '.');
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
+			}
+			if (gameEntrypoint == null && isDirect && type == EnvType.CLIENT) {
+				gameEntrypoint = mainClass.name;
 			}
 		}
 
@@ -473,7 +478,7 @@ public class EntrypointPatch extends GamePatch {
 
 				patched = true;
 			}
-		} else if (type == EnvType.CLIENT && isApplet) {
+		} else if (type == EnvType.CLIENT && (isApplet || isDirect)) {
 			// Applet-side: field is private static File, run at end
 			// At the beginning, set file field (hook)
 			FieldNode runDirectory = findField(gameClass, (f) -> isStatic(f.access) && f.desc.equals("Ljava/io/File;"));
@@ -504,6 +509,10 @@ public class EntrypointPatch extends GamePatch {
 			} else {
 				// Indev and above.
 				ListIterator<AbstractInsnNode> it = gameConstructor.instructions.iterator();
+				if (isDirect) {
+					// Bamboozle the AppletLauncher when there's no applet.
+					AppletLauncher.gameDir = gameProvider.getLaunchDirectory().toFile();
+				}
 				moveAfter(it, Opcodes.INVOKESPECIAL); /* Object.init */
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
 				it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/impl/game/minecraft/applet/AppletMain", "hookGameDir", "(Ljava/io/File;)Ljava/io/File;", false));
@@ -512,7 +521,7 @@ public class EntrypointPatch extends GamePatch {
 				it = gameMethod.instructions.iterator();
 
 				if (gameConstructor == gameMethod) {
-					moveBefore(it, Opcodes.RETURN);
+					moveBefore(it, Opcodes.IFEQ);
 				}
 
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
@@ -590,7 +599,7 @@ public class EntrypointPatch extends GamePatch {
 			classEmitter.accept(mainClass);
 		}
 
-		if (isApplet) {
+		if (isApplet || isDirect) {
 			Hooks.appletMainClass = entrypoint;
 		}
 	}
